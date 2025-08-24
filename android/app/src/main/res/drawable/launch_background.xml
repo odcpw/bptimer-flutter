@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Removed native splash screen to avoid masking app splash -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+</layer-list>
