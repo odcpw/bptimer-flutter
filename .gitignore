@@ -48,3 +48,11 @@ app.*.map.json
 android/key.properties
 *.jks
 *.keystore
+
+# Build directory
+build/
+
+# Development docs - keep out of repo
+CLAUDE.md
+PLAN.md
+debugsma.md
