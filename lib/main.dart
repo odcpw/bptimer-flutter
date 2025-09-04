@@ -16,6 +16,7 @@ import 'package:workmanager/workmanager.dart';
 import 'services/timer_service.dart';
 import 'services/notification_service.dart';
 import 'services/notification_background_service.dart';
+import 'models/practice_config.dart';
 import 'screens/splash_screen.dart';
 import 'utils/constants.dart';
 import 'ui/theme.dart';
@@ -58,6 +59,15 @@ void main() async {
     frequency: const Duration(hours: 24),
   );
   debugPrint('[App] Periodic notification refresh registered');
+  
+  // Initialize content management system
+  try {
+    await PracticeConfig.initialize();
+    debugPrint('[App] PracticeConfig initialized successfully');
+  } catch (e) {
+    debugPrint('[ERROR][App] Failed to initialize PracticeConfig: $e');
+    // Continue running app even if content loading fails
+  }
   
   debugPrint('[App] Platform: ${Platform.operatingSystem}');
   debugPrint('[App] Launching app...');

@@ -7,8 +7,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 import '../models/practice_config.dart';
 import '../utils/constants.dart';
+import '../utils/markdown_styles.dart';
 import '../widgets/app_dialog.dart';
 
 class PracticeInfoButton extends StatelessWidget {
@@ -25,12 +27,6 @@ class PracticeInfoButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Only show button if practice has info available
-    final info = PracticeConfig.getPracticeInfo(practiceName);
-    if (info == null || info.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return IconButton(
       icon: Icon(
         Icons.info_outline,
@@ -42,26 +38,59 @@ class PracticeInfoButton extends StatelessWidget {
         minHeight: size + 8,
       ),
       padding: EdgeInsets.all(size * 0.2),
-      onPressed: () => _showPracticeInfo(context, practiceName, info),
+      onPressed: () => _showPracticeInfo(context, practiceName),
     );
   }
 
-  /// Show practice information dialog
-  void _showPracticeInfo(BuildContext context, String practiceName, String info) {
-    AppDialog.show(
+  /// Show practice information dialog with markdown content
+  Future<void> _showPracticeInfo(BuildContext context, String practiceName) async {
+    // Show loading dialog first
+    showDialog(
       context: context,
-      title: practiceName,
-      showClose: true,
-      content: Text(
-        info,
-        style: const TextStyle(
-          fontSize: TypographyConstants.fontSizeBase,
-          height: 1.4,
-          color: Color(0xFFe5e5e5),
-        ),
-      ),
-      actions: const [],
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
+
+    try {
+      final info = await PracticeConfig.getPracticeInfo(practiceName);
+      
+      // Close loading dialog
+      if (context.mounted) Navigator.of(context).pop();
+
+      if (info == null || info.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No information available for this practice')),
+          );
+        }
+        return;
+      }
+
+      if (context.mounted) {
+        AppDialog.show(
+          context: context,
+          title: practiceName,
+          showClose: true,
+          content: SizedBox(
+            width: double.maxFinite,
+            child: GptMarkdown(
+              info,
+              style: createSmallMarkdownTextStyle(),
+            ),
+          ),
+          actions: const [],
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (context.mounted) Navigator.of(context).pop();
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading practice info: $e')),
+        );
+      }
+    }
   }
 }
 

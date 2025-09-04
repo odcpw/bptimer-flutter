@@ -1,0 +1,50 @@
+practice_categories:
+  - id: mindfulness
+    name: "Mindfulness"
+    practices:
+      - mindfulness_breathing
+      - physical_sensations
+  
+  - id: compassion
+    name: "Compassion/Lovingkindness"
+    practices:
+      - basic_compassion
+      - diffusing_defusing
+      - forgiveness_meditation
+      - going_through_life
+      - by_age
+      - groups_by_countries
+      - waking_up_practice
+      - material_objects_reflection
+      - classify_by_legs
+      - before_sleep
+      - one_ten_eleven_one
+  
+  - id: sympathetic_joy
+    name: "Sympathetic Joy"
+    practices:
+      - basic_sympathetic_joy
+  
+  - id: equanimity
+    name: "Equanimity"
+    practices:
+      - equanimity_basic
+  
+  - id: wise_reflection
+    name: "Wise Reflection"
+    practices:
+      - dedication_merits
+      - five_seven_reflections
+      - five_daily_recollections
+      - death_reflection
+      - ten_paramis
+      - eight_worldly_dhammas
+      - origination_dissolution
+      - food_reflection
+
+about_sections:
+  - balanced_practice
+  - how_to_use
+  - gratitude
+
+sma_info: sma_info

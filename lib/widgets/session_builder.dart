@@ -457,7 +457,6 @@ class _SessionBuilderState extends State<SessionBuilder> {
                 final practice = Practice(
                   name: practiceName,
                   category: categoryKey,
-                  info: PracticeConfig.getPracticeInfo(practiceName),
                 );
                 
                 final isSelected = _practices.any((p) => p.name == practiceName);
@@ -485,7 +484,13 @@ class _SessionBuilderState extends State<SessionBuilder> {
                     ],
                   ),
                   onTap: () {
-                    if (!isSelected) {
+                    if (isSelected) {
+                      // Find and remove the selected practice
+                      final index = _practices.indexWhere((p) => p.name == practiceName);
+                      if (index != -1) {
+                        _removePractice(index);
+                      }
+                    } else {
                       _addPractice(practice);
                     }
                   },

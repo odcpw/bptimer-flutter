@@ -122,7 +122,6 @@ class _PracticeSelectorState extends State<PracticeSelector> {
                     final practice = Practice(
                       name: practiceName,
                       category: categoryKey,
-                      info: PracticeConfig.getPracticeInfo(practiceName),
                     );
                     
                     final isSelected = timerService.selectedPractices
@@ -171,27 +170,29 @@ class _PracticeSelectorState extends State<PracticeSelector> {
   }
 
   /// Show practice information dialog
-  void _showPracticeInfo(BuildContext context, Practice practice) {
-    final info = practice.info;
+  void _showPracticeInfo(BuildContext context, Practice practice) async {
+    final info = await PracticeConfig.getPracticeInfo(practice.name);
     if (info == null || info.isEmpty) return;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(practice.name),
-        content: SingleChildScrollView(
-          child: Text(
-            info,
-            style: const TextStyle(fontSize: 14, height: 1.4),
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(practice.name),
+          content: SingleChildScrollView(
+            child: Text(
+              info,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+      );
+    }
   }
 }

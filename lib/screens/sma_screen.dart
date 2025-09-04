@@ -7,12 +7,15 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 import '../models/sma.dart';
+import '../services/content_service.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../services/notification_persistence.dart';
 import '../ui/layout.dart';
 import '../ui/tokens.dart';
+import '../utils/markdown_styles.dart';
 import '../widgets/app_dialog.dart';
 import '../widgets/app_button.dart';
 
@@ -401,35 +404,26 @@ class _SMAScreenState extends State<SMAScreen> {
   }
 
 
-  void _showInfoDialog() {
-    AppDialog.show(
-      context: context,
-      title: 'Special Mindfulness Activities',
-      content: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'SMAs are custom mindfulness reminders for daily activities like:',
-            style: TextStyle(fontWeight: FontWeight.w500, color: Color(0xFFe5e5e5)),
+  Future<void> _showInfoDialog() async {
+    final contentService = ContentService();
+    final result = await contentService.getSmaInfo();
+    
+    if (mounted) {
+      AppDialog.show(
+        context: context,
+        title: 'Special Mindfulness Activities',
+        content: SizedBox(
+          width: double.maxFinite,
+          child: GptMarkdown(
+            result.isSuccess ? result.data! : 'Failed to load SMA information',
+            style: createMarkdownTextStyle(),
           ),
-          SizedBox(height: 8),
-          Text('• "Notice 3 things" when opening doors', style: TextStyle(color: Color(0xFFe5e5e5))),
-          Text('• "Take a breath" at traffic lights', style: TextStyle(color: Color(0xFFe5e5e5))),
-          Text('• "Feel your feet" when walking', style: TextStyle(color: Color(0xFFe5e5e5))),
-          SizedBox(height: 12),
-          Text('Features:', style: TextStyle(fontWeight: FontWeight.w500, color: Color(0xFFe5e5e5))),
-          SizedBox(height: 4),
-          Text('• Fully offline notifications', style: TextStyle(color: Color(0xFFe5e5e5))),
-          Text('• Flexible scheduling (daily, weekly, monthly)', style: TextStyle(color: Color(0xFFe5e5e5))),
-          Text('• Multiple time windows per day', style: TextStyle(color: Color(0xFFe5e5e5))),
-          Text('• Smart randomized timing', style: TextStyle(color: Color(0xFFe5e5e5))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Got it')),
         ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Got it')),
-      ],
-    );
+      );
+    }
   }
 }
 

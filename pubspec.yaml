@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+2
+version: 1.0.0+3
 
 environment:
   sdk: ^3.9.0
@@ -33,11 +33,11 @@ dependencies:
 
   # Core dependencies for meditation timer app
   cupertino_icons: ^1.0.8
-  flutter_local_notifications: ^19.4.0  # Offline notifications - KEY FEATURE
+  flutter_local_notifications: ^19.4.1  # Offline notifications - KEY FEATURE
   sqflite: ^2.3.3+2                     # Database for sessions and SMAs
   path: ^1.9.0                          # File paths
   shared_preferences: ^2.3.2            # Settings storage
-  fl_chart: ^1.0.0                     # Statistics charts
+  fl_chart: ^1.1.0                     # Statistics charts
   provider: ^6.1.2                      # State management
   intl: ^0.20.2                         # Date formatting
   timezone: ^0.10.1                     # Timezone handling for notifications
@@ -47,9 +47,11 @@ dependencies:
   reorderables: ^0.6.0                  # Drag-drop reordering
   path_provider: ^2.1.4                 # File system access
   file_picker: ^10.3.2                   # Import JSON data
-  just_audio: ^0.10.4                   # Audio playback for meditation bell
+  just_audio: ^0.10.5                   # Audio playbook for meditation bell
   wakelock_plus: ^1.2.8                # Keep screen on during meditation
   workmanager: ^0.9.0                  # Background task management for notification refresh
+  gpt_markdown: ^1.1.3                 # Markdown rendering for content system (replaces discontinued flutter_markdown)
+  yaml: ^3.1.2                         # YAML parsing for content manifest
 
 dev_dependencies:
   flutter_test:
@@ -88,6 +90,12 @@ flutter:
   assets:
     - assets/images/
     - assets/sounds/
+    - assets/content/
+    - assets/content/practices/mindfulness/
+    - assets/content/practices/compassion/
+    - assets/content/practices/sympathetic_joy/
+    - assets/content/practices/equanimity/
+    - assets/content/practices/wise_reflection/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
