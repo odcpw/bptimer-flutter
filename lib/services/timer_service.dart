@@ -8,7 +8,6 @@ library;
 
 // Dart imports
 import 'dart:async';
-import 'dart:math';
 
 // Package imports
 import 'package:flutter/services.dart';
@@ -20,10 +19,8 @@ import 'package:timezone/timezone.dart' as tz;
 
 // Local imports
 import '../models/practice.dart';
-import '../models/session.dart';
 import '../utils/constants.dart';
 import '../utils/result.dart';
-import 'database_service.dart';
 import 'notification_service.dart';
 
 enum TimerState {
@@ -49,7 +46,6 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
   AudioPlayer? _audioPlayer;
   
   // Services
-  final DatabaseService _databaseService = DatabaseService();
   final NotificationService _notificationService = NotificationService();
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   
@@ -266,40 +262,16 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     _backgroundEnterTime = null;
     _wasRunningWhenBackgrounded = false;
     
-    // Save session to database
-    await _saveSession();
+    // Session will be saved only when user chooses to record it
+    // This prevents duplicate saves when user interacts with completion screen
     
     // Play completion sound or haptic feedback
     await _triggerCompletion();
     
     notifyListeners();
-    debugPrint('[Timer] Completed: ${_elapsed}s, practices=${_selectedPractices.length}');
+    debugPrint('[Timer] Completed: ${_elapsed}s, practices=${_selectedPractices.length} (session not auto-saved)');
   }
 
-  /// Save completed session to database
-  Future<void> _saveSession() async {
-    // Generate a robust unique ID to avoid any chance of collision
-    // Using microsecondsSinceEpoch + random suffix prevents primary key
-    // replacement (which would appear as an overwrite in daily stats).
-    final uniqueId = 'session_${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(0xFFFFFFFF)}';
-
-    final session = Session(
-      id: uniqueId,
-      date: DateTime.now(),
-      duration: _elapsed,
-      practices: _selectedPractices,
-      notes: _sessionNotes,
-      posture: _selectedPosture,
-      completedAt: DateTime.now(),
-    );
-
-    final result = await _databaseService.saveSession(session);
-    if (result.isSuccess) {
-      debugPrint('[Timer] Session saved: id=${session.id}, duration=${session.duration}s, practices=${session.practices.length}');
-    } else {
-      debugPrint('[ERROR][Timer] Failed to save session: ${result.error}');
-    }
-  }
 
   /// Trigger completion feedback
   Future<void> _triggerCompletion() async {
@@ -471,14 +443,14 @@ class TimerService extends ChangeNotifier with WidgetsBindingObserver {
     _backgroundEnterTime = null;
     _wasRunningWhenBackgrounded = false;
     
-    // Save session with actual elapsed time
-    await _saveSession();
+    // Session will be saved only when user chooses to record it
+    // This prevents duplicate saves when user interacts with completion screen
     
     // Lighter feedback for early completion
     HapticFeedback.selectionClick();
     
     notifyListeners();
-    debugPrint('[Timer] Session completed early: ${_elapsed}s');
+    debugPrint('[Timer] Session completed early: ${_elapsed}s (session not auto-saved)');
     return const Success(true);
   }
 

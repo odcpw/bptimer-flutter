@@ -12,8 +12,10 @@ import 'package:provider/provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:workmanager/workmanager.dart';
 import 'services/timer_service.dart';
 import 'services/notification_service.dart';
+import 'services/notification_background_service.dart';
 import 'screens/splash_screen.dart';
 import 'utils/constants.dart';
 import 'ui/theme.dart';
@@ -41,6 +43,21 @@ void main() async {
   final notificationService = NotificationService();
   final notificationResult = await notificationService.initialize();
   debugPrint('[App] Notification service: ${notificationResult ? "ready" : "failed"}');
+  
+  // Initialize WorkManager for background notification refresh
+  await Workmanager().initialize(
+    notificationBackgroundDispatcher,
+    isInDebugMode: kDebugMode,
+  );
+  debugPrint('[App] WorkManager initialized');
+  
+  // Start periodic notification refresh (24-hour cycle)
+  await Workmanager().registerPeriodicTask(
+    "sma-notification-refresh",
+    "refreshNotifications",
+    frequency: const Duration(hours: 24),
+  );
+  debugPrint('[App] Periodic notification refresh registered');
   
   debugPrint('[App] Platform: ${Platform.operatingSystem}');
   debugPrint('[App] Launching app...');

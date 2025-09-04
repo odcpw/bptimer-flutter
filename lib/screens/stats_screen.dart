@@ -355,6 +355,14 @@ class _StatsScreenState extends State<StatsScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        Section(
+          title: 'Average Duration',
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: _buildAverageDurationChart(stats),
+          ),
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -398,7 +406,7 @@ class _StatsScreenState extends State<StatsScreen> {
                 child: LinearProgressIndicator(
                   value: percent,
                   minHeight: 10,
-                  backgroundColor: Colors.grey[800],
+                  backgroundColor: Theme.of(context).extension<SemanticColors>()!.surfaceElevated,
                   valueColor: AlwaysStoppedAnimation<Color>(color),
                 ),
               ),
@@ -410,7 +418,7 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _buildCategoryDistributionChart(StatisticsData stats) {
-    // Stacked % by day for categories
+    // Line chart showing practice counts per category per day (like PWA)
     final sessions = stats.sessions;
     final dates = <DateTime>[];
     for (DateTime d = stats.startDate; !d.isAfter(stats.endDate); d = d.add(const Duration(days: 1))) {
@@ -419,68 +427,68 @@ class _StatsScreenState extends State<StatsScreen> {
     }
 
     final categories = PracticeConfig.getAllCategories();
-    final Map<DateTime, Map<String, double>> dayCatMinutes = {for (final d in dates) d: {for (final c in categories) c: 0.0}};
-    for (final s in sessions) {
-      final day = DateTime(s.date.year, s.date.month, s.date.day);
-      if (!dayCatMinutes.containsKey(day)) continue;
-      if (s.practices.isEmpty) {
-        dayCatMinutes[day]!['general'] = (dayCatMinutes[day]!['general'] ?? 0) + (s.duration / 60.0);
+    // Count NUMBER of practices per category per day (not minutes)
+    final Map<DateTime, Map<String, int>> dayCategoryCounts = {
+      for (final d in dates) d: {for (final c in categories) c: 0}
+    };
+    
+    for (final session in sessions) {
+      final day = DateTime(session.date.year, session.date.month, session.date.day);
+      if (!dayCategoryCounts.containsKey(day)) continue;
+      
+      if (session.practices.isEmpty) {
+        dayCategoryCounts[day]!['general'] = (dayCategoryCounts[day]!['general'] ?? 0) + 1;
       } else {
-        final per = (s.duration / 60.0) / s.practices.length;
-        for (final p in s.practices) {
-          dayCatMinutes[day]![p.category] = (dayCatMinutes[day]![p.category] ?? 0) + per;
+        for (final practice in session.practices) {
+          dayCategoryCounts[day]![practice.category] = (dayCategoryCounts[day]![practice.category] ?? 0) + 1;
         }
       }
     }
 
-    final barGroups = <BarChartGroupData>[];
-    for (int i = 0; i < dates.length; i++) {
-      final day = dates[i];
-      final totals = dayCatMinutes[day]!;
-      final sum = totals.values.fold<double>(0.0, (a, b) => a + b);
-      double start = 0.0;
-      final stack = <BarChartRodStackItem>[];
-      for (final c in categories) {
-        final pct = sum > 0 ? (totals[c]! / sum) * 100.0 : 0.0;
-        if (pct <= 0) continue;
-        final color = PracticeConfig.getCategoryColor(c);
-        stack.add(BarChartRodStackItem(start, start + pct, color));
-        start += pct;
+    // Create line datasets for each category
+    final lineDatasets = <LineChartBarData>[];
+    double maxY = 1.0;
+    
+    for (final category in categories) {
+      final spots = <FlSpot>[];
+      for (int i = 0; i < dates.length; i++) {
+        final count = dayCategoryCounts[dates[i]]![category]!.toDouble();
+        spots.add(FlSpot(i.toDouble(), count));
+        if (count > maxY) maxY = count;
       }
-      barGroups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: 100,
-              rodStackItems: stack,
-              borderRadius: BorderRadius.zero,
-              width: 10,
-              color: Colors.transparent,
-            )
-          ],
-        ),
-      );
+      
+      // Only add line if category has any data
+      if (spots.any((spot) => spot.y > 0)) {
+        lineDatasets.add(
+          LineChartBarData(
+            spots: spots,
+            color: PracticeConfig.getCategoryColor(category),
+            dotData: const FlDotData(show: true),
+            belowBarData: BarAreaData(show: false),
+          ),
+        );
+      }
     }
 
-    final labelStep = (dates.length / 7).ceil().clamp(1, 7); // show ~7 labels max
+    final labelStep = (dates.length / 7).ceil().clamp(1, 7);
     return SizedBox(
       height: 220,
-      child: BarChart(
-        BarChartData(
-          maxY: 100,
-          barGroups: barGroups,
+      child: LineChart(
+        LineChartData(
+          maxY: maxY + 1, // Add padding above highest point
+          minY: 0,
+          lineBarsData: lineDatasets,
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 30,
                 getTitlesWidget: (v, m) {
-                  final t = v.toInt();
-                  if (t % 25 != 0) return const SizedBox.shrink();
+                  final count = v.toInt();
+                  if (count < 0 || v != count.toDouble()) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(right: 4.0),
-                    child: Text('$t%', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    child: Text('$count', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
                   );
                 },
               ),
@@ -495,7 +503,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   final d = dates[idx];
                   return Padding(
                     padding: const EdgeInsets.only(top: 4.0),
-                    child: Text('${d.day}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    child: Text('${d.day}', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
                   );
                 },
               ),
@@ -503,10 +511,32 @@ class _StatsScreenState extends State<StatsScreen> {
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          barTouchData: BarTouchData(enabled: false),
-          alignment: BarChartAlignment.spaceBetween,
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: maxY > 10 ? 5 : 1,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Theme.of(context).extension<SemanticColors>()!.border.withOpacity(0.5),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(color: Theme.of(context).extension<SemanticColors>()!.border.withOpacity(0.5)),
+          ),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((touchedSpot) {
+                  final categoryIndex = touchedSpot.barIndex;
+                  final category = categories[categoryIndex];
+                  return LineTooltipItem(
+                    '$category\n${touchedSpot.y.toInt()} practices',
+                    const TextStyle(color: Colors.white, fontSize: 12),
+                  );
+                }).toList();
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -526,10 +556,10 @@ class _StatsScreenState extends State<StatsScreen> {
     }
 
     final colors = [
-      const Color(0xFF20b2aa),
-      const Color(0xFF10b981),
-      const Color(0xFFF59E0B),
-      const Color(0xFF8B5CF6),
+      Theme.of(context).colorScheme.primary,       // 0xFF20b2aa
+      Theme.of(context).extension<SemanticColors>()!.success, // 0xFF10b981  
+      Theme.of(context).extension<SemanticColors>()!.warning, // 0xFFF59E0B
+      const Color(0xFF8B5CF6),                     // Purple accent
     ];
 
     final sections = stats.postureDistribution.entries
@@ -599,6 +629,104 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  Widget _buildAverageDurationChart(StatisticsData stats) {
+    // Line chart showing average session duration per day (like PWA)
+    final dates = <DateTime>[];
+    for (DateTime d = stats.startDate; !d.isAfter(stats.endDate); d = d.add(const Duration(days: 1))) {
+      final day = DateTime(d.year, d.month, d.day);
+      dates.add(day);
+    }
+
+    // Calculate average duration per day using existing data
+    final spots = <FlSpot>[];
+    double maxY = 1.0;
+    
+    for (int i = 0; i < dates.length; i++) {
+      final day = dates[i];
+      final totalMinutes = stats.dailyMinutes[day] ?? 0;
+      final sessionCount = stats.dailySessions[day] ?? 0;
+      final avgDuration = sessionCount > 0 ? totalMinutes / sessionCount : 0.0;
+      
+      spots.add(FlSpot(i.toDouble(), avgDuration));
+      if (avgDuration > maxY) maxY = avgDuration;
+    }
+
+    final labelStep = (dates.length / 7).ceil().clamp(1, 7);
+    return SizedBox(
+      height: 220,
+      child: LineChart(
+        LineChartData(
+          maxY: maxY + 5, // Add padding above highest point
+          minY: 0,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              color: Theme.of(context).colorScheme.secondary, // Use app's secondary color
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (v, m) {
+                  final minutes = v.toInt();
+                  if (minutes < 0 || v != minutes.toDouble()) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4.0),
+                    child: Text('${minutes}m', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (v, m) {
+                  final idx = v.round();
+                  if (idx < 0 || idx >= dates.length) return const SizedBox.shrink();
+                  if (idx % labelStep != 0) return const SizedBox.shrink();
+                  final d = dates[idx];
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text('${d.day}', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: FlGridData(
+            show: true,
+            horizontalInterval: maxY > 30 ? 10 : 5,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Theme.of(context).extension<SemanticColors>()!.border.withOpacity(0.5),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(color: Theme.of(context).extension<SemanticColors>()!.border.withOpacity(0.5)),
+          ),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((touchedSpot) {
+                  return LineTooltipItem(
+                    'Average Duration\n${touchedSpot.y.toInt()} minutes',
+                    const TextStyle(color: Colors.white, fontSize: 12),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _exportData() async {
     try {

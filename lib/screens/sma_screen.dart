@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../models/sma.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
+import '../services/notification_persistence.dart';
 import '../ui/layout.dart';
 import '../ui/tokens.dart';
 import '../widgets/app_dialog.dart';
@@ -37,6 +38,14 @@ class _SMAScreenState extends State<SMAScreen> {
 
   Future<void> _initializeAndLoad() async {
     await _notificationService.initialize();
+    
+    // Check if notifications need restoration (boot recovery)
+    final persistenceService = NotificationPersistence();
+    final restored = await persistenceService.restoreNotificationsIfNeeded();
+    if (restored) {
+      debugPrint('[SMA Screen] Notifications restored after app restart');
+    }
+    
     await _loadSMAs();
   }
 

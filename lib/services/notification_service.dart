@@ -20,6 +20,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:permission_handler/permission_handler.dart';
 import '../models/sma.dart';
+import 'notification_persistence.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -176,7 +177,7 @@ class NotificationService {
     // For now, just log it
   }
 
-  /// Schedule notifications for all enabled SMAs
+  /// Schedule notifications for all enabled SMAs with batching and persistence
   Future<void> scheduleAllSMAs(List<SMA> smas) async {
     if (!_permissionGranted) {
       debugPrint('No notification permission - skipping SMA scheduling');
@@ -187,12 +188,23 @@ class NotificationService {
       // Cancel existing notifications
       await cancelAllNotifications();
 
-      // Schedule new notifications
+      // Generate all notifications first
+      final List<Map<String, dynamic>> allNotifications = [];
       for (final sma in smas) {
         if (sma.notificationsEnabled) {
-          await _scheduleSMANotifications(sma);
+          allNotifications.addAll(_generateSMANotifications(sma));
         }
       }
+      
+      debugPrint('[Scheduling] Generated ${allNotifications.length} total notifications');
+      
+      // Schedule with batching to prevent system overload
+      await _scheduleNotificationsInBatches(allNotifications);
+      
+      // Save to persistence for boot recovery
+      final persistenceService = NotificationPersistence();
+      await persistenceService.saveScheduledSMAs(smas.where((s) => s.notificationsEnabled).toList());
+      await persistenceService.setLastRefresh(DateTime.now());
 
       debugPrint('Scheduled notifications for ${smas.where((s) => s.notificationsEnabled).length} SMAs');
     } catch (e) {
@@ -267,7 +279,7 @@ class NotificationService {
     return notifications;
   }
 
-  /// Generate daily notifications
+  /// Generate daily notifications (24-hour window only)
   int _generateDailyNotifications(SMA sma, List<Map<String, dynamic>> notifications, tz.TZDateTime now, int maxNotifications) {
     int count = 0;
     final random = Random();
@@ -276,21 +288,20 @@ class NotificationService {
     final availableWindowsToday = sma.reminderWindows.where((window) => 
         _canScheduleInWindowToday(window, now)).toList();
     
-    int startDay = availableWindowsToday.isNotEmpty ? 0 : 1; // Start from today if possible
-    int totalDays = startDay == 0 ? 7 : 7; // Always schedule 7 days total
+    // Schedule for today (if windows available) and tomorrow only (24-hour window)
+    final daysToSchedule = availableWindowsToday.isNotEmpty ? [0, 1] : [1];
 
-    // Schedule notifications
-    for (int day = startDay; day < startDay + totalDays && count < maxNotifications; day++) {
+    for (final day in daysToSchedule) {
+      if (count >= maxNotifications) break;
+      
       final targetDate = now.add(Duration(days: day));
       final isToday = day == 0;
       
       // For daily SMAs, only use one reminder window per day (randomly selected)
       List<String> candidateWindows;
       if (isToday) {
-        // Use only available windows for today
         candidateWindows = availableWindowsToday;
       } else {
-        // Use all windows for future days
         candidateWindows = sma.reminderWindows;
       }
       
@@ -317,41 +328,32 @@ class NotificationService {
     return count;
   }
 
-  /// Generate weekly notifications
+  /// Generate weekly notifications (24-hour window only)
   int _generateWeeklyNotifications(SMA sma, List<Map<String, dynamic>> notifications, tz.TZDateTime now, int maxNotifications) {
     int count = 0;
     final random = Random();
 
-    // Find next occurrence
+    // Find next occurrence within 24 hours
     final daysUntilTarget = (sma.dayOfWeek - now.weekday + 7) % 7;
     final isToday = daysUntilTarget == 0;
-    final targetDate = now.add(Duration(days: daysUntilTarget == 0 ? 0 : daysUntilTarget));
+    final targetDate = now.add(Duration(days: daysUntilTarget));
     
-    // For weekly SMAs, only use one reminder window per week (randomly selected)
+    // Only schedule if target is within 24 hours
+    if (targetDate.difference(now).inHours > 24) {
+      debugPrint('[Weekly SMA] Next occurrence is beyond 24-hour window, skipping');
+      return 0;
+    }
+    
     if (sma.reminderWindows.isNotEmpty) {
       List<String> candidateWindows;
       
       if (isToday) {
-        // Check which windows are still available today
         candidateWindows = sma.reminderWindows.where((window) => 
             _canScheduleInWindowToday(window, now)).toList();
         
-        // If no windows available today, schedule for next week
         if (candidateWindows.isEmpty) {
-          final nextWeekDate = now.add(const Duration(days: 7));
-          candidateWindows = sma.reminderWindows;
-          final window = candidateWindows[random.nextInt(candidateWindows.length)];
-          final notificationTime = _getTimeInWindow(nextWeekDate, window, random);
-          final id = _generateNotificationId(sma.id, 1, window);
-
-          notifications.add({
-            'id': id,
-            'title': 'Weekly Mindfulness',
-            'body': sma.name,
-            'scheduledDate': notificationTime,
-          });
-          count++;
-          return count;
+          debugPrint('[Weekly SMA] No available windows today, will be handled by next refresh');
+          return 0;
         }
       } else {
         candidateWindows = sma.reminderWindows;
@@ -380,12 +382,12 @@ class NotificationService {
     return count;
   }
 
-  /// Generate monthly notifications
+  /// Generate monthly notifications (24-hour window only)
   int _generateMonthlyNotifications(SMA sma, List<Map<String, dynamic>> notifications, tz.TZDateTime now, int maxNotifications) {
     int count = 0;
     final random = Random();
 
-    // Schedule for next 30 days
+    // Calculate next monthly occurrence
     var targetDate = tz.TZDateTime(tz.local, now.year, now.month + 1, now.day);
     
     // Handle month overflow and leap years
@@ -394,27 +396,29 @@ class NotificationService {
           .add(const Duration(days: 1));
     }
     
-    // Only schedule if the target date is within 30 days
-    if (targetDate.difference(now).inDays <= 30) {
-      // For monthly SMAs, only use one reminder window per month (randomly selected)
-      if (sma.reminderWindows.isNotEmpty) {
-        final window = sma.reminderWindows[random.nextInt(sma.reminderWindows.length)];
-        final notificationTime = _getTimeInWindow(targetDate, window, random);
-        final id = _generateNotificationId(sma.id, 1, window);
+    // Only schedule if the target date is within 24 hours
+    if (targetDate.difference(now).inHours > 24) {
+      debugPrint('[Monthly SMA] Next occurrence is beyond 24-hour window, skipping');
+      return 0;
+    }
+    
+    if (sma.reminderWindows.isNotEmpty) {
+      final window = sma.reminderWindows[random.nextInt(sma.reminderWindows.length)];
+      final notificationTime = _getTimeInWindow(targetDate, window, random);
+      final id = _generateNotificationId(sma.id, 1, window);
 
-        notifications.add({
-          'id': id,
-          'title': 'Monthly Mindfulness',
-          'body': sma.name,
-          'scheduledDate': notificationTime,
-        });
-        count++;
-      }
+      notifications.add({
+        'id': id,
+        'title': 'Monthly Mindfulness',
+        'body': sma.name,
+        'scheduledDate': notificationTime,
+      });
+      count++;
     }
     return count;
   }
 
-  /// Generate multiple daily notifications
+  /// Generate multiple daily notifications (24-hour window only)
   int _generateMultipleNotifications(SMA sma, List<Map<String, dynamic>> notifications, tz.TZDateTime now, int maxNotifications) {
     int count = 0;
     final random = Random();
@@ -423,33 +427,30 @@ class NotificationService {
     final availableWindowsToday = sma.reminderWindows.where((window) => 
         _canScheduleInWindowToday(window, now)).toList();
     
-    debugPrint('[SMA] Scheduling MULTIPLE notifications for "${sma.name}" at ${now.hour}:${now.minute.toString().padLeft(2, '0')}');
+    debugPrint('[SMA] Scheduling MULTIPLE notifications for "${sma.name}" (24h window)');
     debugPrint('[SMA] Available windows today: ${availableWindowsToday.join(", ")}');
     debugPrint('[SMA] All reminder windows: ${sma.reminderWindows.join(", ")}');
-    debugPrint('[SMA] Expected notifications per day: ${sma.reminderWindows.length}');
     
-    int startDay = availableWindowsToday.isNotEmpty ? 0 : 1; // Start from today if possible
-    int totalDays = 7; // Always schedule 7 days total
-    debugPrint('[SMA] Starting from day $startDay, scheduling $totalDays days total');
+    // Schedule for today (if windows available) and tomorrow only
+    final daysToSchedule = availableWindowsToday.isNotEmpty ? [0, 1] : [1];
 
-    // Schedule notifications - one per selected window per day
-    for (int day = startDay; day < startDay + totalDays && count < maxNotifications; day++) {
+    for (final day in daysToSchedule) {
+      if (count >= maxNotifications) break;
+      
       final targetDate = now.add(Duration(days: day));
       final isToday = day == 0;
       
       // Determine which windows to use for this day
       List<String> windowsToSchedule;
       if (isToday) {
-        // For today, only use available windows
         windowsToSchedule = availableWindowsToday;
       } else {
-        // For future days, use all selected windows
         windowsToSchedule = sma.reminderWindows;
       }
       
-      debugPrint('[SMA] Day $day (${isToday ? 'today' : 'future'}): Scheduling ${windowsToSchedule.length} windows: ${windowsToSchedule.join(", ")}');
+      debugPrint('[SMA] Day $day: Scheduling ${windowsToSchedule.length} windows: ${windowsToSchedule.join(", ")}');
       
-      // Use each selected reminder window (max 4 windows = max 4 notifications per day)
+      // Use each selected reminder window
       for (final window in windowsToSchedule) {
         if (count >= maxNotifications) break;
         
@@ -661,6 +662,48 @@ class NotificationService {
       debugPrint('Failed to get pending notification count: $e');
       return 0;
     }
+  }
+
+  /// Schedule notifications in batches to prevent system overload
+  Future<void> _scheduleNotificationsInBatches(List<Map<String, dynamic>> notifications) async {
+    const int batchSize = 32; // Half of iOS limit for safety
+    const int delayBetweenBatches = 100; // milliseconds
+    
+    debugPrint('[Batching] Scheduling ${notifications.length} notifications in batches of $batchSize');
+    
+    for (int i = 0; i < notifications.length; i += batchSize) {
+      final batch = notifications.skip(i).take(batchSize);
+      
+      // Schedule batch in parallel
+      await Future.wait(
+        batch.map((notification) async {
+          try {
+            await _flutterLocalNotificationsPlugin.zonedSchedule(
+              notification['id'] as int,
+              notification['title'] as String,
+              notification['body'] as String,
+              notification['scheduledDate'] as tz.TZDateTime,
+              _getNotificationDetails(),
+              androidScheduleMode: _exactAlarmPermissionGranted 
+                  ? AndroidScheduleMode.exactAllowWhileIdle 
+                  : AndroidScheduleMode.inexact,
+              payload: notification['smaId'] as String?,
+            );
+          } catch (e) {
+            debugPrint('Failed to schedule notification ID ${notification['id']}: $e');
+          }
+        }),
+      );
+      
+      debugPrint('[Batching] Scheduled batch ${(i ~/ batchSize) + 1}/${(notifications.length / batchSize).ceil()}');
+      
+      // Add delay between batches (except for last batch)
+      if (i + batchSize < notifications.length) {
+        await Future.delayed(Duration(milliseconds: delayBetweenBatches));
+      }
+    }
+    
+    debugPrint('[Batching] All batches scheduled successfully');
   }
 
   /// Request exact alarm permission using plugin's built-in API
